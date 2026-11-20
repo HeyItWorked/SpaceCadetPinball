@@ -4,8 +4,10 @@
   "vendor": "webOS Brew Project",
   "type": "native",
   "main": "SpaceCadetPinball",
-  "title": "Pinball",
+  "title": "Space Cadet Pinball",
   "icon": "icon.png",
   "splashBackground": "splash.png",
-  "appDescription": "Technical Demo for SpaceCadetPinball"
+  "appDescription": "3D Pinball \u2014 Space Cadet, running natively on webOS",
+  "requiredACG": [],
+  "iconColor": "#2E7D32"
 }

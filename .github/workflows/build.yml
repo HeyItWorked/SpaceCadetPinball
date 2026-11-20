@@ -72,27 +72,27 @@ jobs:
       # release, and that is checkable without a TV.
       - name: Verify IPK contents
         shell: bash
+        # ares-package writes the IPK to the repo root; assert the payload is real
         run: |
           set -e
-          ipk=$(find build -name '*.ipk' | head -1)
+          ipk=$(find "$GITHUB_WORKSPACE" -maxdepth 2 -name '*.ipk' | head -1)
           [ -n "$ipk" ] || { echo "no IPK produced"; exit 1; }
           echo "IPK: $ipk ($(stat -c%s "$ipk") bytes)"
           rm -rf /tmp/ipk && mkdir -p /tmp/ipk
-          ar x "$ipk" --output=/tmp/ipk 2>/dev/null || (cd /tmp/ipk && ar x "$OLDPWD/$ipk")
-          data=$(find /tmp/ipk -name 'data.tar.*' | head -1)
-          [ -n "$data" ] || { echo "IPK has no data archive"; exit 1; }
-          tar tf "$data" > /tmp/ipk/list.txt
-          for need in appinfo.json SpaceCadetPinball; do
-            grep -q "/$need\$" /tmp/ipk/list.txt || { echo "missing: $need"; cat /tmp/ipk/list.txt; exit 1; }
+          ( cd /tmp/ipk && ar x "$ipk" )
+          for m in debian-binary control.tar.gz data.tar.gz; do
+            [ -f "/tmp/ipk/$m" ] || { echo "missing ar member: $m"; ls -l /tmp/ipk; exit 1; }
           done
-          echo "IPK contains appinfo.json and the game binary"
-          file build/SpaceCadetPinball/SpaceCadetPinball 2>/dev/null | head -1 || true
+          tar tzf /tmp/ipk/data.tar.gz > /tmp/ipk/list.txt
+          grep -q 'appinfo.json$' /tmp/ipk/list.txt || { echo "no appinfo.json in payload"; exit 1; }
+          grep -q '/SpaceCadetPinball$' /tmp/ipk/list.txt || { echo "no game binary in payload"; exit 1; }
+          echo "payload ok: $(wc -l < /tmp/ipk/list.txt) files"
 
       - name: Upload IPK
         uses: actions/upload-artifact@v4
         with:
           name: SpaceCadetPinball-ipk
           path: |
-            build/**/*.ipk
-            build/**/webosbrew.manifest.json
+            *.ipk
+            webosbrew.manifest.json
           if-no-files-found: error
