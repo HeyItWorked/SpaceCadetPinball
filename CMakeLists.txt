@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.0)
 project(SpaceCadetPinball)
 
+# Without a build type the Makefile and Ninja generators add no optimization flags at all
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 11)
 
 
@@ -220,7 +225,9 @@ endif()
 
 # On webOS, build IPK package
 if(WEBOS)
-    add_custom_target(webos-package
+    # Assembles the app folder in bin/: executable, game data, controller mappings, manifest,
+    # icons and libs. Separate from packaging, so that either packager below can be used.
+    add_custom_target(webos-stage
             COMMAND wget -q -N https://archive.org/download/pinballxp/PinballXP.zip -O ${CMAKE_BINARY_DIR}/pinball.zip
             COMMAND unzip -o ${CMAKE_BINARY_DIR}/pinball.zip -d $<TARGET_FILE_DIR:SpaceCadetPinball>/data
             COMMAND OUTPUT_FILE=$<TARGET_FILE_DIR:SpaceCadetPinball>/gamecontrollerdb.txt sh webos/gen_gamecontrollerdb.sh
@@ -228,18 +235,31 @@ if(WEBOS)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different webos/splash.png $<TARGET_FILE_DIR:SpaceCadetPinball>
             COMMAND ${CMAKE_COMMAND} -E copy_if_different webos/appinfo.json $<TARGET_FILE_DIR:SpaceCadetPinball>
             COMMAND ${CMAKE_COMMAND} -E copy_directory webos/lib $<TARGET_FILE_DIR:SpaceCadetPinball>/lib
+            DEPENDS SpaceCadetPinball
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            )
+
+    # Used by CI: LG's packager, then the manifest a Homebrew Channel repository needs
+    add_custom_target(webos-package
             COMMAND ares-package $<TARGET_FILE_DIR:SpaceCadetPinball>
             # Force PATH environment variable to use system python
             COMMAND PATH=/bin:/usr/bin python3 webos/gen_manifest.py -a $<TARGET_FILE_DIR:SpaceCadetPinball>/appinfo.json
             -p *.ipk -o webosbrew.manifest.json
-            DEPENDS SpaceCadetPinball
             WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             )
+    add_dependencies(webos-package webos-stage)
+
+    # For local builds: the same package from the vendored packager, without LG's CLI
+    add_custom_target(webos-ipk
+            COMMAND PATH=/bin:/usr/bin python3 tools/build_ipk.py $<TARGET_FILE_DIR:SpaceCadetPinball> ${CMAKE_CURRENT_SOURCE_DIR}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+            )
+    add_dependencies(webos-ipk webos-stage)
 elseif(UNIX AND NOT APPLE)
 	include(GNUInstallDirs)
 	install(TARGETS "${PROJECT_NAME}" RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
-	install(FILES "/Platform/Linux/${PROJECT_NAME}.desktop" DESTINATION "share/applications")
-	install(FILES "/Platform/Linux/${PROJECT_NAME}.metainfo.xml" DESTINATION "share/metainfo")
+	install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/Platform/Linux/${PROJECT_NAME}.desktop" DESTINATION "share/applications")
+	install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/Platform/Linux/${PROJECT_NAME}.metainfo.xml" DESTINATION "share/metainfo")
 	foreach(S 16 32 48 128 192)
 		install(FILES "${PROJECT_NAME}/Icon_${S}x${S}.png" DESTINATION
 			"share/icons/hicolor/${S}x${S}/apps" RENAME "${PROJECT_NAME}.png")
