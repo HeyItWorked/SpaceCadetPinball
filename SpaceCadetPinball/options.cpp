@@ -1,6 +1,8 @@
 #include "pch.h"
 #include "options.h"
 
+#include <stdexcept>
+
 #include "fullscrn.h"
 #include "midi.h"
 #include "render.h"
@@ -109,7 +111,8 @@ void options::InitPrimary()
 	Options.FullScreen = get_int("FullScreen", false);
 	Options.Players = get_int("Players", 1);
 	Options.UniformScaling = get_int("Uniform scaling", true);
-	ImGui::GetIO().FontGlobalScale = get_float("UI Scale", 1.0f);
+	// Same range as the slider in the Graphics menu; a scale of 0 would leave no visible UI to fix it with
+	ImGui::GetIO().FontGlobalScale = std::min(5.0f, std::max(0.8f, get_float("UI Scale", 1.0f)));
 	Options.Resolution = get_int("Screen Resolution", -1);
 	Options.LinearFiltering = get_int("Linear Filtering", true);
 	Options.FramesPerSecond = std::min(MaxFps, std::max(MinUps, get_int("Frames Per Second", DefFps)));
@@ -170,7 +173,16 @@ void options::uninit()
 int options::get_int(LPCSTR lpValueName, int defaultValue)
 {
 	auto value = GetSetting(lpValueName, std::to_string(defaultValue));
-	return std::stoi(value);
+	// std::stoi throws on text that is not a number. Uncaught, a single damaged line
+	// in the settings file would abort every start until the file is deleted by hand.
+	try
+	{
+		return std::stoi(value);
+	}
+	catch (const std::logic_error&)
+	{
+		return defaultValue;
+	}
 }
 
 void options::set_int(LPCSTR lpValueName, int data)
@@ -191,7 +203,14 @@ void options::set_string(LPCSTR lpValueName, LPCSTR value)
 float options::get_float(LPCSTR lpValueName, float defaultValue)
 {
 	auto value = GetSetting(lpValueName, std::to_string(defaultValue));
-	return std::stof(value);
+	try
+	{
+		return std::stof(value);
+	}
+	catch (const std::logic_error&)
+	{
+		return defaultValue;
+	}
 }
 
 void options::set_float(LPCSTR lpValueName, float data)

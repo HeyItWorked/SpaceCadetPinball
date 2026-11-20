@@ -26,7 +26,9 @@ int high_score::read(high_score_struct* table)
 		snprintf(Buffer, sizeof Buffer, "%d", position);
 		strcat(Buffer, ".Name");
 		auto name = options::get_string(Buffer, "");
-		strncpy(tablePtr->Name, name.c_str(), sizeof tablePtr->Name);
+		// strncpy leaves an overlong name without terminator, and the code below runs strlen on it
+		strncpy(tablePtr->Name, name.c_str(), sizeof tablePtr->Name - 1);
+		tablePtr->Name[sizeof tablePtr->Name - 1] = 0;
 
 		snprintf(Buffer, sizeof Buffer, "%d", position);
 		strcat(Buffer, ".Score");
