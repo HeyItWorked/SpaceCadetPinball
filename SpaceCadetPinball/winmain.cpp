@@ -47,6 +47,56 @@ bool winmain::OpenRemoteMenu = false;
 bool winmain::ResumeAfterRemoteMenu = false;
 #endif
 
+// Reports an error the game cannot continue from. Returns false when no message box could be
+// shown, as on platforms that have none; the copy on stderr is then the only trace,
+// and webOS builds send stderr to SpaceCadetPinball.log (see SpaceCadetPinball.cpp).
+static bool FatalError(const char* title, const char* message, SDL_Window* window)
+{
+	fprintf(stderr, "%s: %s\n", title, message);
+	return SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title, message, window) == 0;
+}
+
+// Stand-in for a message box, drawn with the already initialized renderer and UI:
+// shows the message until a key or button is pressed.
+static void ShowErrorScreen(SDL_Window* window, SDL_Renderer* renderer, const char* title, const char* message)
+{
+	SDL_ShowWindow(window);
+	// The press that launched the game may still be on its way; do not let it dismiss the message
+	const auto acceptInputAfter = SDL_GetTicks() + 1000;
+	for (auto waiting = true; waiting;)
+	{
+		SDL_Event event;
+		while (SDL_PollEvent(&event))
+		{
+			ImGui_ImplSDL2_ProcessEvent(&event);
+			if (event.type == SDL_QUIT)
+				waiting = false;
+			if ((event.type == SDL_KEYDOWN || event.type == SDL_MOUSEBUTTONDOWN) &&
+				SDL_GetTicks() > acceptInputAfter)
+				waiting = false;
+		}
+
+		ImGui_ImplSDL2_NewFrame();
+		ImGui::NewFrame();
+		ImGui::SetNextWindowPos(ImVec2{});
+		ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+		if (ImGui::Begin(title, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+		                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings))
+		{
+			ImGui::TextWrapped("%s", message);
+			ImGui::Spacing();
+			ImGui::TextUnformatted("Press any key to exit.");
+		}
+		ImGui::End();
+		ImGui::Render();
+
+		SDL_RenderClear(renderer);
+		ImGuiSDL::Render(ImGui::GetDrawData());
+		SDL_RenderPresent(renderer);
+		SDL_Delay(30);
+	}
+}
+
 int winmain::WinMain(LPCSTR lpCmdLine)
 {
 	restart = false;
@@ -65,9 +115,16 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	if (SDL_Init(SDL_INIT_TIMER | SDL_INIT_AUDIO | SDL_INIT_VIDEO |
 		SDL_INIT_EVENTS | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) < 0)
 	{
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not initialize SDL2", SDL_GetError(), nullptr);
+		FatalError("Could not initialize SDL2", SDL_GetError(), nullptr);
 		return 1;
 	}
+
+	// First lines of the log: which SDL the system provided decides much of what follows
+	SDL_version sdlVersion;
+	SDL_GetVersion(&sdlVersion);
+	auto videoDriver = SDL_GetCurrentVideoDriver();
+	printf("SDL %d.%d.%d, platform \"%s\", video driver \"%s\"\n", sdlVersion.major, sdlVersion.minor,
+	       sdlVersion.patch, SDL_GetPlatform(), videoDriver ? videoDriver : "none");
 
 	pinball::quickFlag = strstr(lpCmdLine, "-quick") != nullptr;
 
@@ -82,7 +139,7 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	MainWindow = window;
 	if (!window)
 	{
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not create window", SDL_GetError(), nullptr);
+		FatalError("Could not create window", SDL_GetError(), nullptr);
 		return 1;
 	}
 #ifdef _SDL_webOS_h
@@ -112,7 +169,7 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	}
 	if (!renderer)
 	{
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not create renderer", SDL_GetError(), window);
+		FatalError("Could not create renderer", SDL_GetError(), window);
 		return 1;
 	}
 	SDL_RendererInfo rendererInfo{};
@@ -136,8 +193,11 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	io.KeyMap[ImGuiKey_Space] = SDL_SCANCODE_RETURN;
 #endif
 
+	// Without a settings folder the game still runs; ImGui then tries the working directory
 	auto prefPath = SDL_GetPrefPath(nullptr, "SpaceCadetPinball");
-	auto iniPath = std::string(prefPath) + "imgui_pb.ini";
+	if (!prefPath)
+		printf("No settings folder, settings may not be kept: %s\n", SDL_GetError());
+	auto iniPath = std::string(prefPath ? prefPath : "") + "imgui_pb.ini";
 	io.IniFilename = iniPath.c_str();
 
 	// First step: just load the options
@@ -160,10 +220,16 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	options::InitSecondary();
 
 	if (!Sound::Init(Options.SoundChannels, Options.Sounds))
+	{
+		printf("Sound is off, the audio device could not be opened: %s\n", Mix_GetError());
 		Options.Sounds = false;
+	}
 
 	if (!pinball::quickFlag && !midi::music_init())
+	{
+		printf("Music is off, no track could be loaded (last SDL error: %s)\n", Mix_GetError());
 		Options.Music = false;
+	}
 
 	if (pb::init())
 	{
@@ -176,8 +242,12 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 				message = message + (path[0] ? path : "working directory") + "\n";
 			}
 		}
-		SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Could not load game data",
-		                         message.c_str(), window);
+#ifdef _SDL_webOS_h
+		// See pinball::make_path_name
+		message += "On webOS the files belong in a \"data\" folder inside those.\n";
+#endif
+		if (!FatalError("Could not load game data", message.c_str(), window))
+			ShowErrorScreen(window, renderer, "Could not load game data", message.c_str());
 		return 1;
 	}
 
@@ -295,8 +365,17 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 			auto sdlError = SDL_GetError();
 			if (sdlError[0])
 			{
+				// Each distinct error is printed once. An error that recurs every update would
+				// otherwise add over a hundred lines per second to the log file of a TV.
+				static std::vector<std::string> printedErrors;
+				const std::string error = sdlError;
 				SDL_ClearError();
-				printf("SDL Error: %s\n", sdlError);
+				if (printedErrors.size() < 100 &&
+					std::find(printedErrors.begin(), printedErrors.end(), error) == printedErrors.end())
+				{
+					printedErrors.push_back(error);
+					printf("SDL Error: %s\n", error.c_str());
+				}
 			}
 
 			auto updateEnd = Clock::now();
@@ -1037,7 +1116,7 @@ void winmain::memalloc_failure()
 	Sound::Close();
 	char* caption = pinball::get_rc_string(170, 0);
 	char* text = pinball::get_rc_string(179, 0);
-	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, caption, text, MainWindow);
+	FatalError(caption, text, MainWindow);
 	std::exit(1);
 }
 

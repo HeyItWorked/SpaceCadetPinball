@@ -17,12 +17,52 @@ int MainActual(LPCSTR lpCmdLine)
 	return returnCode;
 }
 
+#ifdef _SDL_webOS_h
+#include <fcntl.h>
+#include <unistd.h>
+
+// A TV has no console: stdout and stderr lead nowhere, and a start that fails leaves no trace.
+// Send both to SpaceCadetPinball.log in the settings folder (on the TV, the installed app folder),
+// or in /tmp when that folder is not writable. The file starts afresh on every launch.
+static void RedirectOutputToLogFile()
+{
+	std::string folders[2];
+	if (auto prefPath = SDL_GetPrefPath(nullptr, "SpaceCadetPinball"))
+	{
+		folders[0] = prefPath;
+		SDL_free(prefPath);
+	}
+	folders[1] = "/tmp/";
+
+	for (auto& folder : folders)
+	{
+		if (folder.empty())
+			continue;
+		auto file = open((folder + "SpaceCadetPinball.log").c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		if (file < 0)
+			continue;
+
+		dup2(file, STDOUT_FILENO);
+		dup2(file, STDERR_FILENO);
+		if (file > STDERR_FILENO)
+			close(file);
+		// Line buffered, so that what was printed before a crash is in the file
+		setvbuf(stdout, nullptr, _IOLBF, 0);
+		return;
+	}
+}
+#endif
+
 int main(int argc, char* argv[])
 {
 	std::string cmdLine;
 	for (int i = 1; i < argc; i++)
 		cmdLine += argv[i];
 
+#ifdef _SDL_webOS_h
+	RedirectOutputToLogFile();
+	printf("Space Cadet Pinball, launch parameters: %s\n", cmdLine.c_str());
+#endif
 	return MainActual(cmdLine.c_str());
 }
 
