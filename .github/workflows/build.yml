@@ -22,6 +22,9 @@ jobs:
           node-version: '20'
 
       # 1.2 GB; cache it so the rebuild is ~30 s instead of minutes
+      - name: Install webOS CLI (ares-package)
+        run: npm install -g @webos-tools/cli
+
       - name: Cache webOS NDK
         id: ndk-cache
         uses: actions/cache@v4
