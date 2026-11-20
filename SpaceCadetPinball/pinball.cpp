@@ -27,9 +27,16 @@ std::map<uint32_t, LPCSTR> rc_strings
 	{19, "Ramp Bonus On"},
 	{20, "Light Reset Off"},
 	{21, "Skill Shot\n%ld"},
+#ifdef _SDL_webOS_h
+	// The originals name F3 and F2, keys a TV remote does not have
+	{22, "Game Paused\nBack to Continue"},
+	{23, "Continue Play"},
+	{24, "OK Starts New Game"},
+#else
 	{22, "Game Paused\nF3 to Resume"},
 	{23, "Continue Play"},
 	{24, "F2 Starts New Game"},
+#endif
 	{25, "Careful..."},
 	{26, "Player 1"},
 	{27, "Player 2"},

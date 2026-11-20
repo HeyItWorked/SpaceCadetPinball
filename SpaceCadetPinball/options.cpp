@@ -77,6 +77,26 @@ void options::InitPrimary()
 			{InputTypes::GameController, SDL_CONTROLLER_BUTTON_DPAD_UP},
 		},
 	};
+#ifdef _SDL_webOS_h
+	// A TV remote has arrows and OK, but no letter keys and no mouse buttons.
+	// Flippers and plunger go on those; the classic keys stay for USB keyboards.
+	Options.KeyDft.LeftFlipper[0] = {InputTypes::Keyboard, SDLK_LEFT};
+	Options.KeyDft.LeftFlipper[1] = {InputTypes::Keyboard, SDLK_z};
+	Options.KeyDft.RightFlipper[0] = {InputTypes::Keyboard, SDLK_RIGHT};
+	Options.KeyDft.RightFlipper[1] = {InputTypes::Keyboard, SDLK_SLASH};
+	Options.KeyDft.Plunger[0] = {InputTypes::Keyboard, SDLK_RETURN};
+	Options.KeyDft.Plunger[1] = {InputTypes::Keyboard, SDLK_DOWN};
+	Options.Key = Options.KeyDft;
+
+	// Bindings saved by a build that predates these defaults would shadow them and leave
+	// a remote-only player without flippers. Replace such saved bindings, once.
+	const int remoteBindingsVersion = 1;
+	if (get_int("Remote Bindings", 0) < remoteBindingsVersion)
+	{
+		set_int("Remote Bindings", remoteBindingsVersion);
+		SaveInputs();
+	}
+#endif
 	GetInput("Left Flipper key", Options.Key.LeftFlipper);
 	GetInput("Right Flipper key", Options.Key.RightFlipper);
 	GetInput("Plunger key", Options.Key.Plunger);
@@ -114,7 +134,7 @@ void options::InitSecondary()
 	fullscrn::SetResolution(Options.Resolution == -1 ? maxRes : Options.Resolution);
 }
 
-void options::uninit()
+void options::SaveInputs()
 {
 	SetInput("Left Flipper key", Options.Key.LeftFlipper);
 	SetInput("Right Flipper key", Options.Key.RightFlipper);
@@ -122,6 +142,11 @@ void options::uninit()
 	SetInput("Left Table Bump key", Options.Key.LeftTableBump);
 	SetInput("Right Table Bump key", Options.Key.RightTableBump);
 	SetInput("Bottom Table Bump key", Options.Key.BottomTableBump);
+}
+
+void options::uninit()
+{
+	SaveInputs();
 
 	set_int("Sounds", Options.Sounds);
 	set_int("Music", Options.Music);

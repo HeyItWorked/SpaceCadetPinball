@@ -42,6 +42,10 @@ winmain::DurationMs winmain::TargetFrameTime;
 optionsStruct& winmain::Options = options::Options;
 winmain::DurationMs winmain::SpinThreshold = DurationMs(0.005);
 WelfordState winmain::SleepState{};
+#ifdef _SDL_webOS_h
+bool winmain::OpenRemoteMenu = false;
+bool winmain::ResumeAfterRemoteMenu = false;
+#endif
 
 int winmain::WinMain(LPCSTR lpCmdLine)
 {
@@ -49,6 +53,12 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	bQuit = false;
 
 	std::set_new_handler(memalloc_failure);
+
+#ifdef _SDL_webOS_h
+	// By default the system keeps the remote's Back key for itself and the game never sees it.
+	// Exit (long press on Back) is left to the system on purpose: it stays the way out.
+	SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
+#endif
 
 	// SDL init
 	SDL_SetMainReady();
@@ -112,6 +122,10 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 	// ImGui_ImplSDL2_Init is private, we are not actually using ImGui OpenGl backend
 	ImGui_ImplSDL2_InitForOpenGL(window, nullptr);
 	io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+#ifdef _SDL_webOS_h
+	// Dear ImGui activates the focused item with Space, a key the remote does not have: use OK
+	io.KeyMap[ImGuiKey_Space] = SDL_SCANCODE_RETURN;
+#endif
 
 	auto prefPath = SDL_GetPrefPath(nullptr, "SpaceCadetPinball");
 	auto iniPath = std::string(prefPath) + "imgui_pb.ini";
@@ -596,12 +610,19 @@ void winmain::RenderUi()
 			}
 			ImGui::EndMenu();
 		}
+#ifdef _SDL_webOS_h
+		// The bar itself needs a pointer; tell remote-only players where their menu is
+		ImGui::TextDisabled("   Remote: press Back for the menu");
+#endif
 		if (DispFrameRate && !FpsDetails.empty())
 			if (ImGui::BeginMenu(FpsDetails.c_str()))
 				ImGui::EndMenu();
 		ImGui::EndMainMenuBar();
 	}
 
+#ifdef _SDL_webOS_h
+	RenderRemoteMenu();
+#endif
 	a_dialog();
 	high_score::RenderHighScoreDialog();
 	if (ShowSpriteViewer)
@@ -611,8 +632,116 @@ void winmain::RenderUi()
 		RenderFrameTimeDialog();
 }
 
+#ifdef _SDL_webOS_h
+// The menu bar needs a pointer or an Alt key, and a TV remote has neither.
+// Back opens this popup instead: arrows move, OK selects, Back closes it again.
+void winmain::RenderRemoteMenu()
+{
+	if (OpenRemoteMenu)
+	{
+		OpenRemoteMenu = false;
+		ImGui::OpenPopup("RemoteMenu");
+		// Show the selection at once; it is normally hidden until an arrow key is pressed
+		ImGui::GetCurrentContext()->NavDisableHighlight = false;
+	}
+
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2{0.5f, 0.5f});
+	if (!ImGui::BeginPopup("RemoteMenu"))
+	{
+		// Closed by a choice or by Back: carry on playing, unless the choice opened a dialog
+		if (ResumeAfterRemoteMenu)
+		{
+			ResumeAfterRemoteMenu = false;
+			end_pause();
+		}
+		return;
+	}
+
+	ImGui::MenuItem("Resume");
+	if (ImGui::MenuItem("New Game"))
+	{
+		new_game();
+	}
+	if (ImGui::BeginMenu("Select Players"))
+	{
+		static const char* playerLabels[4]{"1 Player", "2 Players", "3 Players", "4 Players"};
+		for (auto i = 0; i < 4; i++)
+		{
+			if (ImGui::MenuItem(playerLabels[i], nullptr, Options.Players == i + 1))
+			{
+				options::toggle(static_cast<Menu1>(static_cast<int>(Menu1::OnePlayer) + i));
+				new_game();
+			}
+		}
+		ImGui::EndMenu();
+	}
+	ImGui::Separator();
+
+	if (ImGui::MenuItem("Sound", nullptr, Options.Sounds))
+	{
+		options::toggle(Menu1::Sounds);
+	}
+	if (ImGui::MenuItem("Music", nullptr, Options.Music))
+	{
+		options::toggle(Menu1::Music);
+	}
+	ImGui::Separator();
+
+	if (ImGui::MenuItem("High Scores...", nullptr, false, HighScoresEnabled))
+	{
+		ResumeAfterRemoteMenu = false;
+		pb::high_scores();
+	}
+	if (ImGui::MenuItem("Player Controls..."))
+	{
+		ResumeAfterRemoteMenu = false;
+		options::ShowControlDialog();
+	}
+	ImGui::Separator();
+
+	// Deliberately last and behind a menu: Back alone never quits the game
+	if (ImGui::MenuItem("Exit"))
+	{
+		SDL_Event event{SDL_QUIT};
+		SDL_PushEvent(&event);
+	}
+	ImGui::EndPopup();
+}
+#endif
+
 int winmain::event_handler(const SDL_Event* event)
 {
+#ifdef _SDL_webOS_h
+	if ((event->type == SDL_KEYDOWN || event->type == SDL_KEYUP) &&
+		event->key.keysym.scancode == SDL_WEBOS_SCANCODE_BACK)
+	{
+		if (event->type == SDL_KEYDOWN && !ImIO->WantCaptureKeyboard)
+		{
+			// Nothing is open. A paused game (left so by a dialog) continues;
+			// a running one pauses and gets the remote menu.
+			if (!event->key.repeat)
+			{
+				if (single_step)
+				{
+					end_pause();
+				}
+				else
+				{
+					pause();
+					OpenRemoteMenu = ResumeAfterRemoteMenu = true;
+				}
+			}
+		}
+		else
+		{
+			// A menu or a dialog has the focus: Back is its Escape
+			SDL_Event uiEvent = *event;
+			uiEvent.key.keysym.scancode = SDL_SCANCODE_ESCAPE;
+			ImGui_ImplSDL2_ProcessEvent(&uiEvent);
+		}
+		return 1;
+	}
+#endif
 	ImGui_ImplSDL2_ProcessEvent(event);
 
 	if (ImIO->WantCaptureMouse && !options::WaitingForInput())

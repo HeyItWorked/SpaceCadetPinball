@@ -125,4 +125,5 @@ private:
 	static void MyUserData_WriteAll(ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf);
 	static const std::string& GetSetting(const std::string& key, const std::string& value);
 	static void SetSetting(const std::string& key, const std::string& value);
+	static void SaveInputs();
 };

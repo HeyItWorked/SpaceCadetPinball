@@ -100,8 +100,14 @@ private:
 	static struct optionsStruct& Options;
 	static DurationMs SpinThreshold;
 	static WelfordState SleepState;
+#ifdef _SDL_webOS_h
+	static bool OpenRemoteMenu, ResumeAfterRemoteMenu;
+#endif
 
 	static void RenderUi();
 	static void RenderFrameTimeDialog();
 	static void HybridSleep(DurationMs seconds);
+#ifdef _SDL_webOS_h
+	static void RenderRemoteMenu();
+#endif
 };

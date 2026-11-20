@@ -443,6 +443,16 @@ void pb::InputDown(GameInput input)
 
 	if (game_mode != 1)
 	{
+#ifdef _SDL_webOS_h
+		// A TV remote has no F2: once the game over sequence has finished,
+		// the plunger key starts the next game
+		if (game_mode == 2 && !MainTable->EndGameTimeoutTimer &&
+			AnyBindingMatchesInput(options::Options.Key.Plunger, input))
+		{
+			winmain::new_game();
+			return;
+		}
+#endif
 		mode_countdown(-1.f);
 		return;
 	}
