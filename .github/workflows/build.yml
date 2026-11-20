@@ -43,9 +43,12 @@ jobs:
 
       - name: Configure
         shell: bash
+        # The NDK's own cmake predates -S/-B, so use the positional form (source, then build dir)
+        working-directory: ${{ github.workspace }}
         run: |
           . "$NDK_DIR/environment-setup-armv7a-neon-webos-linux-gnueabi"
-          cmake -S . -B build \
+          mkdir -p build && cd build
+          cmake "$GITHUB_WORKSPACE" \
             -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
             -DWEBOS=ON \
             -DCMAKE_TOOLCHAIN_FILE="$NDK_DIR/sysroots/x86_64-webossdk-linux/usr/share/cmake/OEToolchainConfig.cmake"
