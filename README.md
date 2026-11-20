@@ -154,7 +154,8 @@ ssh lgtv 'cat /media/developer/apps/usr/palm/applications/com.github.k4zmu2a.spa
 If that folder is not writable the log goes to `/tmp/SpaceCadetPinball.log`. It starts
 afresh on every launch and opens with the SDL version, platform name and video driver the
 TV provided, then says where the game data was found, how many controller mappings loaded,
-and why sound or music are off if they are.
+and why sound or music are off if they are. Its last line tells how the run ended:
+`Exited with code 0` after a normal exit, `Terminated by signal 11` after a crash.
 
 Settings, key bindings and high scores live in `imgui_pb.ini` in the same folder. Deleting
 that file puts everything back to defaults.

@@ -18,6 +18,7 @@ int MainActual(LPCSTR lpCmdLine)
 }
 
 #ifdef _SDL_webOS_h
+#include <csignal>
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -51,6 +52,22 @@ static void RedirectOutputToLogFile()
 		return;
 	}
 }
+
+// Last line of the log when the process dies of a fault or of an uncaught exception
+// (std::terminate ends in SIGABRT). Without it a crash and a clean exit look the same.
+static void LogFatalSignal(int signalNumber)
+{
+	// Only async-signal-safe calls in here
+	char message[] = "Terminated by signal 00\n";
+	message[21] = static_cast<char>('0' + signalNumber / 10 % 10);
+	message[22] = static_cast<char>('0' + signalNumber % 10);
+	auto written = write(STDERR_FILENO, message, sizeof message - 1);
+	(void)written;
+
+	// Let the default action end the process, as it would have without this handler
+	signal(signalNumber, SIG_DFL);
+	raise(signalNumber);
+}
 #endif
 
 int main(int argc, char* argv[])
@@ -61,9 +78,16 @@ int main(int argc, char* argv[])
 
 #ifdef _SDL_webOS_h
 	RedirectOutputToLogFile();
+	for (auto fatalSignal : {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT})
+		signal(fatalSignal, LogFatalSignal);
 	printf("Space Cadet Pinball, launch parameters: %s\n", cmdLine.c_str());
 #endif
-	return MainActual(cmdLine.c_str());
+
+	auto returnCode = MainActual(cmdLine.c_str());
+#ifdef _SDL_webOS_h
+	printf("Exited with code %d\n", returnCode);
+#endif
+	return returnCode;
 }
 
 #if _WIN32
