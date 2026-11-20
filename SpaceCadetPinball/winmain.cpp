@@ -1022,6 +1022,10 @@ int winmain::event_handler(const SDL_Event* event)
 			midi::music_stop();
 			has_focus = false;
 			pb::loose_focus();
+			// A backgrounded app may be killed without ever seeing SDL_QUIT, and exit was the
+			// only point where options were saved. No frames run without focus, so flush now.
+			options::uninit();
+			ImGui::SaveIniSettingsToDisk(ImIO->IniFilename);
 			break;
 		case SDL_WINDOWEVENT_SIZE_CHANGED:
 		case SDL_WINDOWEVENT_RESIZED:

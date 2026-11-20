@@ -441,6 +441,7 @@ void options::RenderControlDialog()
 		if (ImGui::Button("OK"))
 		{
 			Options.Key = RebindControls;
+			SaveInputs();
 			ShowDialog = false;
 		}
 

@@ -200,6 +200,9 @@ void high_score::RenderHighScoreDialog()
 			{
 				default_name[31] = 0;
 				place_new_score_into(dlg_hst, dlg_score, default_name, dlg_position);
+				// Hand the table to the settings now, they are flushed to disk within seconds.
+				// Leaving it to pb::uninit loses the score when the process is killed instead of quit.
+				write(dlg_hst);
 			}
 			ImGui::CloseCurrentPopup();
 		}
@@ -217,6 +220,7 @@ void high_score::RenderHighScoreDialog()
 			if (ImGui::Button("OK", ImVec2(120, 0)))
 			{
 				clear_table(dlg_hst);
+				write(dlg_hst);
 				ImGui::CloseCurrentPopup();
 			}
 			ImGui::SetItemDefaultFocus();
