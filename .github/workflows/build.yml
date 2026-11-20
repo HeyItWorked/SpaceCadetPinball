@@ -57,13 +57,13 @@ jobs:
         shell: bash
         run: |
           . "$NDK_DIR/environment-setup-armv7a-neon-webos-linux-gnueabi"
-          cmake --build build --config "$BUILD_TYPE" --target SpaceCadetPinball -j"$(nproc)"
+          cmake --build build --config "$BUILD_TYPE" --target SpaceCadetPinball -- -j"$(nproc)"
 
       - name: Package IPK
         shell: bash
         run: |
           . "$NDK_DIR/environment-setup-armv7a-neon-webos-linux-gnueabi"
-          cmake --build build --config "$BUILD_TYPE" --target webos-package
+          cmake --build build --config "$BUILD_TYPE" --target webos-package -- -j"$(nproc)"
 
       # Real smoke test: an IPK that is empty, unreadable or missing the binary is a broken
       # release, and that is checkable without a TV.
