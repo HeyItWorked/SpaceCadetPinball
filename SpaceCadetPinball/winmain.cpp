@@ -86,7 +86,16 @@ int winmain::WinMain(LPCSTR lpCmdLine)
 		return 1;
 	}
 #ifdef _SDL_webOS_h
-    SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt");
+	{
+		// The mappings ship next to the executable; the working directory is only a fallback
+		auto appPath = SDL_GetBasePath();
+		auto mappings = SDL_GameControllerAddMappingsFromFile(
+			(std::string(appPath ? appPath : "") + "gamecontrollerdb.txt").c_str());
+		SDL_free(appPath);
+		if (mappings < 0)
+			mappings = SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt");
+		printf("gamecontrollerdb.txt: %d new mappings for SDL platform \"%s\"\n", mappings, SDL_GetPlatform());
+	}
 #endif
 
 	// If HW fails, fallback to SW SDL renderer.
@@ -707,6 +716,21 @@ void winmain::RenderRemoteMenu()
 	}
 	ImGui::EndPopup();
 }
+
+// Back on the remote or Start on a pad, pressed while no menu or dialog has the focus.
+// A paused game (left so by a dialog) continues; a running one pauses and gets the menu.
+void winmain::RemoteMenuKey()
+{
+	if (single_step)
+	{
+		end_pause();
+	}
+	else
+	{
+		pause();
+		OpenRemoteMenu = ResumeAfterRemoteMenu = true;
+	}
+}
 #endif
 
 int winmain::event_handler(const SDL_Event* event)
@@ -717,20 +741,8 @@ int winmain::event_handler(const SDL_Event* event)
 	{
 		if (event->type == SDL_KEYDOWN && !ImIO->WantCaptureKeyboard)
 		{
-			// Nothing is open. A paused game (left so by a dialog) continues;
-			// a running one pauses and gets the remote menu.
 			if (!event->key.repeat)
-			{
-				if (single_step)
-				{
-					end_pause();
-				}
-				else
-				{
-					pause();
-					OpenRemoteMenu = ResumeAfterRemoteMenu = true;
-				}
-			}
+				RemoteMenuKey();
 		}
 		else
 		{
@@ -940,9 +952,17 @@ int winmain::event_handler(const SDL_Event* event)
 		}
 		break;
 	case SDL_JOYDEVICEADDED:
-		if (SDL_IsGameController(event->jdevice.which))
 		{
-			SDL_GameControllerOpen(event->jdevice.which);
+			// Name and GUID are what an entry of gamecontrollerdb.txt is matched on;
+			// logging them is how an unmapped pad gets diagnosed without a debugger
+			char guid[33];
+			SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(event->jdevice.which), guid, sizeof guid);
+			auto name = SDL_JoystickNameForIndex(event->jdevice.which);
+			auto mapped = SDL_IsGameController(event->jdevice.which) == SDL_TRUE;
+			printf("Joystick connected: \"%s\", GUID %s, %s\n", name ? name : "unnamed", guid,
+			       mapped ? "mapped as game controller" : "no game controller mapping, ignored");
+			if (mapped)
+				SDL_GameControllerOpen(event->jdevice.which);
 		}
 		break;
 	case SDL_JOYDEVICEREMOVED:
@@ -959,7 +979,12 @@ int winmain::event_handler(const SDL_Event* event)
 		switch (event->cbutton.button)
 		{
 		case SDL_CONTROLLER_BUTTON_START:
+#ifdef _SDL_webOS_h
+			// Same as Back on the remote: a pad cannot reach the menu bar either
+			RemoteMenuKey();
+#else
 			pause();
+#endif
 			break;
 		case SDL_CONTROLLER_BUTTON_BACK:
 			if (single_step)

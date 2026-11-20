@@ -109,5 +109,6 @@ private:
 	static void HybridSleep(DurationMs seconds);
 #ifdef _SDL_webOS_h
 	static void RenderRemoteMenu();
+	static void RemoteMenuKey();
 #endif
 };
